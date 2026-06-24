@@ -62,6 +62,10 @@ class DataProfiler:
             raise ValueError(f"'{target_col}' sütunu bulunamadı.")
 
         numeric_df = self.df.select_dtypes(include=[np.number])
+        if target_col not in numeric_df.columns:
+            print(f"ℹ️  '{target_col}' kategorik sütun, sayısal korelasyon atlandı.")
+            return pd.Series(dtype=float)
+
         correlations = (
             numeric_df.corr()[target_col]
             .drop(target_col, errors="ignore")
