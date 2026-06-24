@@ -1,47 +1,55 @@
 """
-Data Preprocessing Pipeline — Giriş Noktası
-============================================
-Kullanım:
-    python main.py
-
-Config dict'ini düzenleyerek herhangi bir veri setine uyarlayabilirsiniz.
+DataForge — Giriş Noktası
+Kullanım: python main.py
 """
-
+from sklearn.model_selection import train_test_split
 from src.pipeline import DataPipeline
+from src.trainer import ModelTrainer
 
+# ── 1. Veri Ön İşleme ────────────────────────────────────────────────
 config = {
-    # ── Veri ──────────────────────────────────────────────────────────
-    "file_path":             "data/raw/train.csv",   # CSV | Excel | JSON | Parquet
-    "target_col":            "score",                # Hedef sütun adı
-    "task":                  "regression",           # 'regression' | 'classification'
-
-    # ── Temizlik ──────────────────────────────────────────────────────
-    "missing_strategy":      "knn",       # 'mean' | 'median' | 'knn' | 'iterative'
-    "outlier_method":        "iqr",       # 'iqr' | 'zscore' | 'isolation_forest'
-    "outlier_action":        "cap",       # 'cap' | 'remove' | 'flag'
-
-    # ── Dönüşüm ───────────────────────────────────────────────────────
-    "encoding_method":       "auto",      # 'auto' | 'onehot' | 'label' | 'target'
-    "scaling_method":        "robust",    # 'standard' | 'minmax' | 'robust'
-    "exclude_from_scaling":  [],          # Örn: ['id', 'student_id']
+    "file_path":             "data/raw/train.csv",
+    "target_col":            "score",
+    "task":                  "regression",
+    "missing_strategy":      "knn",
+    "outlier_method":        "iqr",
+    "outlier_action":        "cap",
+    "encoding_method":       "auto",
+    "scaling_method":        "robust",
+    "exclude_from_scaling":  [],
     "exclude_from_encoding": [],
-
-    # Özellik mühendisliği (opsiyonel, boş bırakılabilir)
-    "interaction_pairs":     [],          # Örn: [('study_hours', 'attendance')]
-    "ratio_pairs":           [],          # Örn: [('correct', 'total_questions')]
-
-    # ── Özellik Seçimi ────────────────────────────────────────────────
+    "interaction_pairs":     [],
+    "ratio_pairs":           [],
     "run_feature_selection": True,
-    "corr_threshold":        0.95,        # Bu eşiğin üzerindeki korelasyonlar atılır
-    "mi_top_k":              None,        # Kaç özellik kalsın? None → hepsini tut
-
-    # ── Çıktı ─────────────────────────────────────────────────────────
+    "corr_threshold":        0.95,
+    "mi_top_k":              None,
     "output_path":           "data/processed/clean_data.csv",
 }
 
-if __name__ == "__main__":
-    pipeline = DataPipeline(config)
-    df_clean = pipeline.run(profile=True)
+pipeline = DataPipeline(config)
+df_clean = pipeline.run(profile=True)
 
-    print(f"Model eğitimine hazır veri — ilk 5 satır:")
-    print(df_clean.head())
+# ── 2. Train/Test Ayır ───────────────────────────────────────────────
+target = config["target_col"]
+X = df_clean.drop(columns=[target])
+y = df_clean[target]
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# ── 3. Model Karşılaştırma ───────────────────────────────────────────
+trainer = ModelTrainer(task=config["task"], cv=5)
+results = trainer.compare_models(X_train, y_train)
+
+# ── 4. Hyperparameter Tuning (en iyi model otomatik seçilir) ─────────
+best = trainer.tune(X_train, y_train, n_trials=50)
+
+# ── 5. Ensemble ──────────────────────────────────────────────────────
+ensemble = trainer.build_ensemble(X_train, y_train, top_n=3, method="stacking")
+
+# ── 6. Test Seti Değerlendirme ────────────────────────────────────────
+print("\n── Tuned Model ──")
+trainer.evaluate(best, X_test, y_test)
+
+print("\n── Ensemble ──")
+trainer.evaluate(ensemble, X_test, y_test)
